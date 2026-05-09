@@ -1,0 +1,9 @@
+.pio/
+.venv/
+*.bin
+*.elf
+*.map
+*.log
+.DS_Store
+browser-demo-iana.png
+.github-deploy-key/
