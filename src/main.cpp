@@ -28,6 +28,13 @@ constexpr int PRESSURE_MIN_Z = 350;
 constexpr int PRESSURE_MAX_Z = 1800;
 constexpr int MIN_TONE_DUTY = 34;
 constexpr int MAX_TONE_DUTY = 155;
+constexpr int VOLUME_MIN = 0;
+constexpr int VOLUME_MAX = 30;
+constexpr int VOL_MINUS_X = 226;
+constexpr int VOL_VALUE_X = 254;
+constexpr int VOL_PLUS_X = 292;
+constexpr int VOL_Y = 5;
+constexpr int VOL_BUTTON_SIZE = 22;
 
 constexpr int TOUCH_MIN_X = 200;
 constexpr int TOUCH_MAX_X = 3700;
@@ -55,17 +62,18 @@ SPIClass touchSpi = SPIClass(HSPI);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
 PianoKey keys[] = {
-    {"C", "home", 523, 255, 64, 64, 255, 0, 0, 8, 58, 56, 118},
-    {"D", "step", 587, 255, 160, 40, 255, 90, 0, 70, 58, 56, 118},
-    {"E", "bright", 659, 250, 235, 50, 130, 255, 0, 132, 58, 56, 118},
-    {"G", "lift", 784, 70, 210, 120, 0, 255, 0, 194, 58, 56, 118},
-    {"A", "spark", 880, 80, 145, 255, 0, 80, 255, 256, 58, 56, 118},
+    {"C", "home", 523, 255, 64, 64, 255, 0, 0, 3, 36, 60, 202},
+    {"D", "step", 587, 255, 160, 40, 255, 90, 0, 67, 36, 60, 202},
+    {"E", "bright", 659, 250, 235, 50, 130, 255, 0, 131, 36, 60, 202},
+    {"G", "lift", 784, 70, 210, 120, 0, 255, 0, 195, 36, 60, 202},
+    {"A", "spark", 880, 80, 145, 255, 0, 80, 255, 259, 36, 58, 202},
 };
 
-String devLines[] = {"booting", "", ""};
 int8_t activeKey = -1;
 uint16_t currentFrequency = 0;
+uint16_t currentPressureDuty = 0;
 uint16_t currentDuty = 0;
+uint8_t masterVolume = 4;
 
 uint16_t makeColor(uint8_t red, uint8_t green, uint8_t blue) {
   return tft.color565(red, green, blue);
@@ -79,23 +87,6 @@ bool shouldUseDarkText(const PianoKey &key) {
   return key.red + key.green + key.blue > 420;
 }
 
-void addDevMessage(const String &message) {
-  devLines[2] = devLines[1];
-  devLines[1] = devLines[0];
-  devLines[0] = message;
-
-  tft.fillRect(0, 199, SCREEN_WIDTH, 41, TFT_BLACK);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString("DEV", 8, 205, 2);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  for (uint8_t i = 0; i < 3; i++) {
-    tft.drawString(devLines[i], 48, 205 + (i * 11), 1);
-  }
-
-  Serial.println(message);
-}
-
 void setRgbLed(uint8_t red, uint8_t green, uint8_t blue) {
   ledcWrite(LED_RED_CHANNEL, 255 - red);
   ledcWrite(LED_GREEN_CHANNEL, 255 - green);
@@ -103,14 +94,36 @@ void setRgbLed(uint8_t red, uint8_t green, uint8_t blue) {
 }
 
 void drawHeader() {
-  tft.fillRect(0, 0, SCREEN_WIDTH, 42, TFT_BLACK);
+  tft.fillRect(0, 0, SCREEN_WIDTH, 32, TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("Color Piano", 10, 6, 4);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString("5 happy notes", 210, 11, 2);
+  tft.drawString("Color Piano", 8, 6, 4);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.drawString("Tap keys: sound + matching LED color", 10, 31, 1);
+  tft.drawString("tap a key", 142, 14, 2);
+}
+
+void drawVolumeControl() {
+  char volumeText[5];
+  snprintf(volumeText, sizeof(volumeText), "%u", masterVolume);
+
+  tft.fillRect(198, 0, 122, 32, TFT_BLACK);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("VOL", 202, 11, 2);
+
+  tft.fillRoundRect(VOL_MINUS_X, VOL_Y, VOL_BUTTON_SIZE, VOL_BUTTON_SIZE, 4,
+                    TFT_DARKGREY);
+  tft.fillRoundRect(VOL_PLUS_X, VOL_Y, VOL_BUTTON_SIZE, VOL_BUTTON_SIZE, 4,
+                    TFT_DARKGREY);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+  tft.drawString("-", VOL_MINUS_X + VOL_BUTTON_SIZE / 2,
+                 VOL_Y + VOL_BUTTON_SIZE / 2, 4);
+  tft.drawString("+", VOL_PLUS_X + VOL_BUTTON_SIZE / 2,
+                 VOL_Y + VOL_BUTTON_SIZE / 2, 4);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString(volumeText, VOL_VALUE_X + 16, VOL_Y + VOL_BUTTON_SIZE / 2, 2);
 }
 
 void drawKey(uint8_t index, bool pressed) {
@@ -118,8 +131,8 @@ void drawKey(uint8_t index, bool pressed) {
   const uint16_t fill = makeColor(key.red, key.green, key.blue);
   const uint16_t comp = complementColor(key);
   const uint16_t text = shouldUseDarkText(key) ? TFT_BLACK : TFT_WHITE;
-  const int16_t y = pressed ? key.y + 7 : key.y;
-  const int16_t h = pressed ? key.h - 7 : key.h;
+  const int16_t y = pressed ? key.y + 8 : key.y;
+  const int16_t h = pressed ? key.h - 8 : key.h;
 
   tft.fillRect(key.x - 2, key.y - 2, key.w + 4, key.h + 10, TFT_NAVY);
   tft.fillRoundRect(key.x, y, key.w, h, 6, fill);
@@ -128,40 +141,29 @@ void drawKey(uint8_t index, bool pressed) {
 
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(text, fill);
-  tft.drawString(key.note, key.x + key.w / 2, y + 38, 6);
-  tft.drawString(key.hint, key.x + key.w / 2, y + 80, 2);
+  tft.drawString(key.note, key.x + key.w / 2, y + 76, 7);
+  tft.drawString(key.hint, key.x + key.w / 2, y + 126, 2);
 
   tft.fillRoundRect(key.x + 9, y + h - 22, key.w - 18, 14, 5, comp);
 }
 
-void drawLesson() {
-  tft.fillRect(0, 180, SCREEN_WIDTH, 19, TFT_NAVY);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_NAVY);
-
-  if (activeKey >= 0) {
-    const PianoKey &key = keys[activeKey];
-    tft.drawString(String(key.note) + " note uses a color and its opposite.",
-                   10, 182, 2);
-  } else {
-    tft.drawString("Complementary colors are color opposites.", 10, 182, 2);
-  }
-}
-
-uint16_t pressureToDuty(int16_t z) {
+uint16_t pressureToRawDuty(int16_t z) {
   return constrain(map(z, PRESSURE_MIN_Z, PRESSURE_MAX_Z, MIN_TONE_DUTY,
                        MAX_TONE_DUTY),
                    MIN_TONE_DUTY, MAX_TONE_DUTY);
 }
 
+uint16_t scaleDutyForVolume(uint16_t pressureDuty) {
+  return (pressureDuty * masterVolume) / VOLUME_MAX;
+}
+
 void drawUi() {
   tft.fillScreen(TFT_NAVY);
   drawHeader();
+  drawVolumeControl();
   for (uint8_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
     drawKey(i, false);
   }
-  drawLesson();
-  addDevMessage("ready: tap a piano key");
 }
 
 bool readTouchPoint(int16_t &x, int16_t &y, int16_t &z) {
@@ -190,23 +192,48 @@ int8_t keyAt(int16_t x, int16_t y) {
   return -1;
 }
 
+bool handleVolumeTouch(int16_t x, int16_t y) {
+  if (y < 0 || y > 34) {
+    return false;
+  }
+
+  if (x >= VOL_MINUS_X - 8 && x <= VOL_MINUS_X + VOL_BUTTON_SIZE + 8) {
+    const uint8_t step = masterVolume <= 10 ? 1 : 5;
+    masterVolume = masterVolume < step ? VOLUME_MIN : masterVolume - step;
+  } else if (x >= VOL_PLUS_X - 8 && x <= VOL_PLUS_X + VOL_BUTTON_SIZE + 8) {
+    const uint8_t step = masterVolume < 10 ? 1 : 5;
+    masterVolume = min<uint8_t>(VOLUME_MAX, masterVolume + step);
+  } else {
+    return false;
+  }
+
+  drawVolumeControl();
+  if (activeKey >= 0) {
+    currentDuty = scaleDutyForVolume(currentPressureDuty);
+    ledcWrite(SPEAKER_CHANNEL, currentDuty);
+  }
+  return true;
+}
+
 void stopNote() {
   if (activeKey >= 0) {
     drawKey(activeKey, false);
     activeKey = -1;
-    drawLesson();
   }
 
   currentFrequency = 0;
+  currentPressureDuty = 0;
   currentDuty = 0;
   ledcWrite(SPEAKER_CHANNEL, 0);
   ledcWriteTone(SPEAKER_CHANNEL, 0);
 }
 
 void playKey(uint8_t index, int16_t z) {
-  const uint16_t duty = pressureToDuty(z);
+  const uint16_t pressureDuty = pressureToRawDuty(z);
+  const uint16_t duty = scaleDutyForVolume(pressureDuty);
 
   if (activeKey == index) {
+    currentPressureDuty = pressureDuty;
     currentDuty = duty;
     ledcWrite(SPEAKER_CHANNEL, currentDuty);
     return;
@@ -219,15 +246,13 @@ void playKey(uint8_t index, int16_t z) {
   activeKey = index;
   const PianoKey &key = keys[index];
   currentFrequency = key.frequency;
+  currentPressureDuty = pressureDuty;
   currentDuty = duty;
   setRgbLed(key.ledRed, key.ledGreen, key.ledBlue);
   ledcWriteTone(SPEAKER_CHANNEL, currentFrequency);
   ledcWrite(SPEAKER_CHANNEL, currentDuty);
 
   drawKey(index, true);
-  drawLesson();
-  addDevMessage(String("note ") + key.note + " tone=" + currentFrequency +
-                " vol=" + currentDuty);
 }
 
 void setupLed() {
@@ -263,9 +288,6 @@ void setup() {
   setupLed();
   setupSpeaker();
   drawUi();
-
-  Serial.println();
-  Serial.println("CYD Color Piano is running.");
 }
 
 void loop() {
@@ -277,6 +299,9 @@ void loop() {
   if (readTouchPoint(x, y, z)) {
     if (millis() - lastTouchMs > 70) {
       lastTouchMs = millis();
+      if (handleVolumeTouch(x, y)) {
+        return;
+      }
       const int8_t touchedKey = keyAt(x, y);
       if (touchedKey >= 0) {
         playKey(touchedKey, z);
@@ -284,7 +309,6 @@ void loop() {
         if (activeKey >= 0) {
           stopNote();
         }
-        addDevMessage(String("touch x=") + x + " y=" + y + " z=" + z);
       }
     }
   } else if (activeKey >= 0) {
