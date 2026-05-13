@@ -2,6 +2,8 @@
 
 A five-key color piano for the ESP32 Cheap Yellow Display (CYD / ESP32-2432S028R).
 
+![Rendered screen preview of the CYD Kids Toy Piano](docs/cyd-kids-toy-piano-screen.svg)
+
 ## Features
 
 - Five touch keys: C, D, E, G, A
@@ -24,4 +26,3 @@ A five-key color piano for the ESP32 Cheap Yellow Display (CYD / ESP32-2432S028R
 pio run -e cyd
 pio run -e cyd -t upload
 ```
-
