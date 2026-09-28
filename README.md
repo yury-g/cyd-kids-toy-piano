@@ -2,7 +2,12 @@
 
 A five-key color piano for the ESP32 Cheap Yellow Display (CYD / ESP32-2432S028R).
 
-![Rendered screen preview of the CYD Kids Toy Piano](docs/cyd-kids-toy-piano-screen.svg)
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/cyd-kids-toy-piano-still.svg">
+  <img src="docs/cyd-kids-toy-piano-demo.svg" alt="Animated CYD hardware preview: five piano keys play in a loop while the rear RGB glow changes color" width="1200">
+</picture>
+
+*Silent animated preview — watch the keys press and the rear RGB light follow each note, then hold its last color. Plays right here in the README; no clicks needed.*
 
 ## Features
 
